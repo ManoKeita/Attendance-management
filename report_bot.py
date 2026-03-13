@@ -146,7 +146,7 @@ async def send_dm_to_admins(embed: discord.Embed, reporter_uid: str):
 def build_report_embed(display_name: str, action: str, condition: str) -> discord.Embed:
     action_emoji    = {"起床": "🌅", "出発": "🚶", "到着": "🏢"}
     condition_emoji = {"いい": "😊", "まあまあ": "😐", "わるい": "😔"}
-    now      = datetime.datetime.now()
+    now      = datetime.datetime.now(JST)
     date_str = now.strftime("%Y/%m/%d")
     time_str = now.strftime("%H:%M")
 
@@ -173,20 +173,17 @@ async def alert_loop():
     """毎分チェックして未報告アラートを送信"""
     await bot.wait_until_ready()
 
-    # uid -> {action -> 送信回数}
-    alert_count: dict[str, dict[str, int]] = {}
-    last_reset_date = ""
-
     while not bot.is_closed():
         now   = datetime.datetime.now(JST)
         today = now.date().isoformat()
 
-        # 日付が変わったらリセット
-        if today != last_reset_date:
-            alert_count = {}
-            last_reset_date = today
-
         data = load_data()
+
+        # 日付が変わったらalert_countをリセット
+        if data.get("alert_count_date") != today:
+            data["alert_count"] = {}
+            data["alert_count_date"] = today
+            save_data(data)
 
         # アラート時刻をdataから取得（なければデフォルト）
         alert_times = {}
@@ -194,12 +191,13 @@ async def alert_loop():
             saved = data.get("alert_times", {}).get(action)
             alert_times[action] = tuple(saved) if saved else default
 
+        changed = False
         for uid, emp in data["employees"].items():
-            if uid not in alert_count:
-                alert_count[uid] = {}
+            if uid not in data["alert_count"]:
+                data["alert_count"][uid] = {}
 
             for action, (alert_h, alert_m) in alert_times.items():
-                count = alert_count[uid].get(action, 0)
+                count = data["alert_count"][uid].get(action, 0)
 
                 # 最大送信回数に達していたらスキップ
                 if count >= ALERT_MAX_COUNT:
@@ -212,7 +210,8 @@ async def alert_loop():
 
                 # 今日すでに報告済みか
                 if has_reported(uid, action):
-                    alert_count[uid][action] = ALERT_MAX_COUNT  # スキップ
+                    data["alert_count"][uid][action] = ALERT_MAX_COUNT
+                    changed = True
                     continue
 
                 # アラート送信
@@ -232,7 +231,11 @@ async def alert_loop():
                     await channel.send(f"<@{uid}>", embed=embed)
                     print(f"[アラート送信] {emp['display_name']} / {action} ({count+1}回目)")
 
-                alert_count[uid][action] = count + 1
+                data["alert_count"][uid][action] = count + 1
+                changed = True
+
+        if changed:
+            save_data(data)
 
         await asyncio.sleep(60)  # 1分ごとにチェック
 
@@ -546,6 +549,30 @@ async def set_alert(interaction: discord.Interaction, action: str, hour: int, mi
     )
 
 
+
+@tree.command(name="アラート削除", description="設定したアラート時刻をデフォルトに戻します")
+@app_commands.describe(action="削除する報告種別（起床 / 出発 / 到着）")
+@app_commands.checks.has_permissions(administrator=True)
+async def delete_alert(interaction: discord.Interaction, action: str):
+    if action not in ["起床", "出発", "到着"]:
+        await interaction.response.send_message("⚠️ 報告種別は「起床」「出発」「到着」のいずれかを入力してください", ephemeral=True)
+        return
+
+    data = load_data()
+    if "alert_times" not in data or action not in data.get("alert_times", {}):
+        await interaction.response.send_message(f"⚠️ {action}のアラート設定はありません", ephemeral=True)
+        return
+
+    del data["alert_times"][action]
+    save_data(data)
+
+    h, m = DEFAULT_ALERT_TIMES[action]
+    await interaction.response.send_message(
+        f"🗑️ {action}のアラート設定を削除しました\nデフォルト時刻（{h:02d}:{m:02d}）に戻ります",
+        ephemeral=True
+    )
+
+
 # ==========================================
 # 管理者DMからの返信を従業員チャンネルに転送
 # ==========================================
@@ -581,7 +608,7 @@ async def on_message(message: discord.Message):
                 description=message.content,
                 color=discord.Color.gold()
             )
-            embed.set_footer(text=f"管理者より {datetime.datetime.now().strftime('%Y/%m/%d %H:%M')}")
+            embed.set_footer(text=f"管理者より {datetime.datetime.now(JST).strftime('%Y/%m/%d %H:%M')}")
             await channel.send(f"<@{reporter_uid}>", embed=embed)
             await message.channel.send(f"✅ {employee['display_name']}さんのチャンネルに送信しました")
             return
