@@ -173,6 +173,9 @@ async def alert_loop():
     """毎分チェックして未報告アラートを送信"""
     await bot.wait_until_ready()
 
+    # 起動直後は既存のalert_countを信頼してそのまま使う（誤送信防止）
+    boot_time = datetime.datetime.now(JST)
+
     while not bot.is_closed():
         now   = datetime.datetime.now(JST)
         today = now.date().isoformat()
@@ -184,6 +187,11 @@ async def alert_loop():
             data["alert_count"] = {}
             data["alert_count_date"] = today
             save_data(data)
+
+        # 起動後2分以内はアラート送信しない（再起動直後の誤送信防止）
+        if (now - boot_time).total_seconds() < 120:
+            await asyncio.sleep(60)
+            continue
 
         # アラート時刻をdataから取得（なければデフォルト）
         alert_times = {}
@@ -442,8 +450,13 @@ async def show_list(interaction: discord.Interaction):
     else:
         embed.add_field(name="🔑 管理者", value="未登録", inline=False)
 
-    # アラート時刻も表示
-    alert_lines = [f"・{action}：{h:02d}:{m:02d} までに未報告でアラート" for action, (h, m) in ALERT_TIMES.items()]
+    # アラート時刻をdataから取得して表示
+    alert_lines = []
+    for action, default in DEFAULT_ALERT_TIMES.items():
+        saved = data.get("alert_times", {}).get(action)
+        h, m = saved if saved else default
+        label = "（カスタム）" if saved else "（デフォルト）"
+        alert_lines.append(f"・{action}：{h:02d}:{m:02d} {label}")
     embed.add_field(name="⏰ アラート設定", value="\n".join(alert_lines), inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
