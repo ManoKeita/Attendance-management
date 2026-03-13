@@ -279,35 +279,27 @@ class StatusView(discord.ui.View):
         super().__init__(timeout=None)
         self.display_name = display_name
         self.employee_uid = employee_uid
+        # ユーザーIDを含む一意なcustom_idで重複を防ぐ
+        self.add_item(ReportButton("🌅 起床", discord.ButtonStyle.primary,   f"wakeup_{employee_uid}", "起床", display_name, employee_uid))
+        self.add_item(ReportButton("🚶 出発", discord.ButtonStyle.success,   f"depart_{employee_uid}", "出発", display_name, employee_uid))
+        self.add_item(ReportButton("🏢 到着", discord.ButtonStyle.secondary, f"arrive_{employee_uid}", "到着", display_name, employee_uid))
 
-    async def _check(self, interaction: discord.Interaction) -> bool:
+
+class ReportButton(discord.ui.Button):
+    def __init__(self, label: str, style: discord.ButtonStyle, custom_id: str, action: str, display_name: str, employee_uid: int):
+        super().__init__(label=label, style=style, custom_id=custom_id)
+        self.action       = action
+        self.display_name = display_name
+        self.employee_uid = employee_uid
+
+    async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.employee_uid:
             await interaction.response.send_message("❌ このボタンはあなた専用ではありません", ephemeral=True)
-            return False
-        return True
-
-    @discord.ui.button(label="🌅 起床", style=discord.ButtonStyle.primary,   custom_id="btn_wakeup")
-    async def wakeup(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction): return
+            return
         await interaction.response.send_message(
             "体調を選んでください 👇",
-            view=ConditionView(self.display_name, "起床", self.employee_uid), ephemeral=True
-        )
-
-    @discord.ui.button(label="🚶 出発", style=discord.ButtonStyle.success,   custom_id="btn_depart")
-    async def depart(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction): return
-        await interaction.response.send_message(
-            "体調を選んでください 👇",
-            view=ConditionView(self.display_name, "出発", self.employee_uid), ephemeral=True
-        )
-
-    @discord.ui.button(label="🏢 到着", style=discord.ButtonStyle.secondary, custom_id="btn_arrive")
-    async def arrive(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if not await self._check(interaction): return
-        await interaction.response.send_message(
-            "体調を選んでください 👇",
-            view=ConditionView(self.display_name, "到着", self.employee_uid), ephemeral=True
+            view=ConditionView(self.display_name, self.action, self.employee_uid),
+            ephemeral=True
         )
 
 
