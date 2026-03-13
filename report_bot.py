@@ -59,6 +59,9 @@ ALERT_TIMES = {
     "到着": (9, 50),   # 9:50  までに到着報告がない場合
 }
 
+# 何件メッセージが溜まったらパネルを再送信するか
+PANEL_REFRESH_COUNT = 7
+
 # ==========================================
 # データ管理
 # ==========================================
@@ -68,10 +71,11 @@ def load_data() -> dict:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {
-        "employees":   {},   # uid -> {display_name, channel_id, channel_name}
-        "admins":      [],   # [uid, ...]
-        "last_report": {},   # admin_uid -> reporter_uid（返信転送用）
-        "today_reports": {}  # uid -> {起床: bool, 出発: bool, 到着: bool, date: str}
+        "employees":     {},   # uid -> {display_name, channel_id, channel_name}
+        "admins":        [],   # [uid, ...]
+        "last_report":   {},   # admin_uid -> reporter_uid（返信転送用）
+        "today_reports": {},   # uid -> {起床: bool, 出発: bool, 到着: bool, date: str}
+        "message_count": {}    # uid -> int（パネル再送信カウント用）
     }
 
 
@@ -241,6 +245,18 @@ class ConditionView(discord.ui.View):
         mark_reported(str(self.reporter_uid), self.action)
         await send_dm_to_admins(embed, str(self.reporter_uid))
 
+
+        # 報告するたびに新しいパネルを送信
+        panel_embed = discord.Embed(
+            title=f"📋 {self.display_name}さんの報告パネル",
+            description="下のボタンで報告してください\n報告内容は管理者にDMで届きます",
+            color=discord.Color.blurple()
+        )
+        await interaction.channel.send(embed=panel_embed, view=StatusView(
+            display_name=self.display_name,
+            employee_uid=self.reporter_uid
+        ))
+
     @discord.ui.button(label="😊 いい",    style=discord.ButtonStyle.success)
     async def good(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.send_final_report(interaction, "いい")
@@ -342,10 +358,10 @@ async def add_employee(
 
     embed = discord.Embed(
         title=f"📋 {display_name}さんの報告パネル",
-        description="下のボタンで報告してください\n報告内容は管理者にDMで届きます",
+        description="**毎日の報告はここから！**\n━━━━━━━━━━━━━━━━━━\n🌅 **起床** → 起きたら押す\n🚶 **出発** → 家を出たら押す\n🏢 **到着** → 職場に着いたら押す\n━━━━━━━━━━━━━━━━━━\n報告後に体調を選んでください\n📩 報告内容は管理者にDMで届きます",
         color=discord.Color.blurple()
     )
-    await channel.send(embed=embed, view=StatusView(display_name=display_name, employee_uid=member.id))
+    await channel.send(content="# ⬇️ タップして報告 ⬇️", embed=embed, view=StatusView(display_name=display_name, employee_uid=member.id))
 
     data["employees"][uid] = {
         "display_name": display_name,
@@ -443,10 +459,10 @@ async def setup_all(interaction: discord.Interaction):
             continue
         embed = discord.Embed(
             title=f"📋 {v['display_name']}さんの報告パネル",
-            description="下のボタンで報告してください\n報告内容は管理者にDMで届きます",
+            description="**毎日の報告はここから！**\n━━━━━━━━━━━━━━━━━━\n🌅 **起床** → 起きたら押す\n🚶 **出発** → 家を出たら押す\n🏢 **到着** → 職場に着いたら押す\n━━━━━━━━━━━━━━━━━━\n報告後に体調を選んでください\n📩 報告内容は管理者にDMで届きます",
             color=discord.Color.blurple()
         )
-        await channel.send(embed=embed, view=StatusView(display_name=v["display_name"], employee_uid=int(uid)))
+        await channel.send(content="# ⬇️ タップして報告 ⬇️", embed=embed, view=StatusView(display_name=v["display_name"], employee_uid=int(uid)))
         await interaction.followup.send(f"✅ `#{v['channel_name']}` にパネルを再設置しました")
     await interaction.followup.send("🎉 セットアップ完了！")
 
