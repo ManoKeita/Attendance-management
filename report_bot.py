@@ -219,7 +219,15 @@ async def alert_loop():
 
         for uid, emp in data["employees"].items():
             if uid not in sent_today:
+                # 新しく検出したuidも起動時と同様にスキップ処理
                 sent_today[uid] = {}
+                for action, default in DEFAULT_ALERT_TIMES.items():
+                    saved = data.get("alert_times", {}).get(action)
+                    ah, am = saved if saved else default
+                    at = now.replace(hour=ah, minute=am, second=0, microsecond=0)
+                    if now >= at:
+                        sent_today[uid][action] = ALERT_MAX_COUNT
+                        print(f"[新規スキップ] {emp['display_name']} / {action}")
 
             for action, (alert_h, alert_m) in alert_times.items():
                 count = sent_today[uid].get(action, 0)
