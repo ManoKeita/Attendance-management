@@ -363,42 +363,41 @@ class NippoButton(discord.ui.Button):
         if interaction.user.id != self.employee_uid:
             await interaction.response.send_message("❌ このボタンはあなた専用ではありません", ephemeral=True)
             return
-        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid, furikaeri=""))
+        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid))
 
 
 # ==========================================
-# 振り返りModal（1/2）
+# 日報・振り返りModal（1画面）
 # ==========================================
 
-
-
-# ==========================================
-# 日報Modal（2/2）
-# ==========================================
-
-class NippoModal(discord.ui.Modal, title="📊 日報入力（2/2）"):
-    def __init__(self, display_name: str, employee_uid: int, furikaeri: dict):
+class NippoModal(discord.ui.Modal, title="📝 日報・振り返り報告"):
+    def __init__(self, display_name: str, employee_uid: int):
         super().__init__()
         self.display_name = display_name
         self.employee_uid = employee_uid
-        self.furikaeri    = furikaeri
 
+    furikaeri = discord.ui.TextInput(
+        label="振り返り（意識した点・できた点・できなかった点など）",
+        style=discord.TextStyle.paragraph,
+        placeholder="意識した点：\nできてた点：\nできてなかった点：\n改善策：\n次回意識する点：",
+        required=True
+    )
     date_goals = discord.ui.TextInput(
-        label="日付 / 月間目標成約 / 月間目標スイング成約",
+        label="〇月〇日 / 月間目標成約〇件 / 月間目標スイング〇件",
         style=discord.TextStyle.short,
-        placeholder="例：3/13 / 10 / 5",
+        placeholder="例：3/13 / 目標10件 / スイング5件",
         required=True
     )
     daily = discord.ui.TextInput(
-        label="当日着座数 / 当日成約 / 当日スイング成約",
+        label="当日着座〇件 / 当日成約〇件 / 当日スイング〇件",
         style=discord.TextStyle.short,
-        placeholder="例：8 / 2 / 1",
+        placeholder="例：8件 / 2件 / 1件",
         required=True
     )
     monthly = discord.ui.TextInput(
-        label="月間累計成約 / 月間累計スイング / 残成約 / 残スイング",
+        label="月間累計成約〇件 / 累計スイング〇件 / 残成約〇件 / 残スイング〇件",
         style=discord.TextStyle.short,
-        placeholder="例：6 / 3 / 4 / 2",
+        placeholder="例：6件 / 3件 / 4件 / 2件",
         required=True
     )
 
@@ -407,19 +406,15 @@ class NippoModal(discord.ui.Modal, title="📊 日報入力（2/2）"):
         date_str = now.strftime("%Y/%m/%d")
         time_str = now.strftime("%H:%M")
 
-        # チャンネルに投稿するembed
         embed = discord.Embed(
             title=f"📝 {self.display_name}さんの日報",
             color=discord.Color.blurple()
         )
-        embed.add_field(name="＝＝ 振り返り ＝＝", value="​", inline=False)
-        for k, v in self.furikaeri.items():
-            embed.add_field(name=k, value=v, inline=False)
-
-        embed.add_field(name="＝＝ 日報 ＝＝", value="​", inline=False)
-        embed.add_field(name="日付 / 月間目標成約 / 月間目標スイング",      value=self.date_goals.value, inline=False)
-        embed.add_field(name="当日着座数 / 当日成約 / 当日スイング",         value=self.daily.value,      inline=False)
-        embed.add_field(name="月間累計成約 / 累計スイング / 残成約 / 残スイング", value=self.monthly.value, inline=False)
+        embed.add_field(name="📋 振り返り",       value=self.furikaeri.value,  inline=False)
+        embed.add_field(name="━━━━━━━━━━",        value="​",                   inline=False)
+        embed.add_field(name="📅 日付・月間目標", value=self.date_goals.value, inline=False)
+        embed.add_field(name="📊 当日実績",        value=self.daily.value,      inline=False)
+        embed.add_field(name="📈 月間累計・残数", value=self.monthly.value,    inline=False)
         embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
 
         await interaction.response.send_message("✅ 日報を送信しました！", ephemeral=True)
@@ -753,21 +748,4 @@ async def on_ready():
     print(f"登録済み従業員: {len(data['employees'])}名 / 管理者: {len(data['admins'])}名")
 
 
-import asyncio, time
-
-async def main():
-    retry_delay = 30
-    while True:
-        try:
-            await bot.start(BOT_TOKEN)
-        except discord.errors.HTTPException as e:
-            if e.status == 429:
-                print(f"レート制限中。{retry_delay}秒後に再試行...")
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 300)
-            else:
-                raise
-        except Exception:
-            raise
-
-asyncio.run(main())
+bot.run(BOT_TOKEN)
