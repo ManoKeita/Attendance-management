@@ -150,7 +150,7 @@ def build_report_embed(display_name: str, action: str, condition: str) -> discor
     time_str = now.strftime("%H:%M")
 
     embed = discord.Embed(
-        title=f"{action_emoji.get(action, '')} {display_name}さんから！{action}報告が届きました！",
+        title=f"{action_emoji.get(action, '')} {display_name}さんから！{action}報告を送信しました！",
         color=(
             discord.Color.green()  if condition == "いい"    else
             discord.Color.orange() if condition == "まあまあ" else
@@ -240,7 +240,7 @@ class ConditionView(discord.ui.View):
 
     async def send_final_report(self, interaction: discord.Interaction, condition: str):
         embed = build_report_embed(self.display_name, self.action, condition)
-        await interaction.response.edit_message(content="✅ 報告完了！管理者に送信しました。", view=None)
+        await interaction.response.edit_message(content=f"✅ {self.action}報告を送信しました！", view=None)
         await interaction.channel.send(embed=embed)
         mark_reported(str(self.reporter_uid), self.action)
         await send_dm_to_admins(embed, str(self.reporter_uid))
