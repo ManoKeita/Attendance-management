@@ -541,8 +541,7 @@ async def set_alert(interaction: discord.Interaction, action: str, hour: int, mi
     save_data(data)
 
     await interaction.response.send_message(
-        f"✅ {action}のアラート時刻を **{hour:02d}:{minute:02d}** に設定しました（日本時間）
-アラートは最大{ALERT_MAX_COUNT}回送信されます",
+        f"✅ {action}のアラート時刻を {hour:02d}:{minute:02d} に設定しました（日本時間）\nアラートは最大{ALERT_MAX_COUNT}回送信されます",
         ephemeral=True
     )
 
