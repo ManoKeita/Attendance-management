@@ -170,28 +170,46 @@ def build_report_embed(display_name: str, action: str, condition: str) -> discor
 # ==========================================
 
 async def alert_loop():
-    """毎分チェックして未報告アラートを送信"""
+    """
+    毎分チェックして未報告アラートを送信
+    アラート送信済み判定はメモリ上の sent_today で管理。
+    sent_today = { uid: { action: 送信回数 } }
+    日付をまたいだらリセット。
+    「アラート時刻を過ぎているかつ未報告」の場合のみ送信し、
+    Bot起動時にすでにアラート時刻を過ぎていても today_reports に
+    報告済みか sent_today に記録があればスキップする。
+    """
     await bot.wait_until_ready()
 
-    # 起動直後は既存のalert_countを信頼してそのまま使う（誤送信防止）
-    boot_time = datetime.datetime.now(JST)
+    # メモリ上で管理（Railwayファイルリセット問題を回避）
+    sent_today: dict[str, dict[str, int]] = {}  # uid -> {action -> 送信回数}
+    last_date  = datetime.datetime.now(JST).date().isoformat()
+
+    # 起動時点で「アラート時刻をすでに過ぎているもの」はスキップ対象として記録
+    # → 起動直後の誤送信を防ぐ
+    now_boot = datetime.datetime.now(JST)
+    data_boot = load_data()
+    for uid in data_boot.get("employees", {}):
+        sent_today[uid] = {}
+        for action, default in DEFAULT_ALERT_TIMES.items():
+            saved = data_boot.get("alert_times", {}).get(action)
+            alert_h, alert_m = saved if saved else default
+            alert_time = now_boot.replace(hour=alert_h, minute=alert_m, second=0, microsecond=0)
+            # 起動時点でアラート時刻を過ぎていたら送信済みとしてマーク
+            if now_boot >= alert_time:
+                sent_today[uid][action] = ALERT_MAX_COUNT
+                print(f"[起動スキップ] {data_boot['employees'][uid]['display_name']} / {action} （起動時点で時刻超過）")
 
     while not bot.is_closed():
         now   = datetime.datetime.now(JST)
         today = now.date().isoformat()
 
+        # 日付が変わったらリセット
+        if today != last_date:
+            sent_today  = {}
+            last_date   = today
+
         data = load_data()
-
-        # 日付が変わったらalert_countをリセット
-        if data.get("alert_count_date") != today:
-            data["alert_count"] = {}
-            data["alert_count_date"] = today
-            save_data(data)
-
-        # 起動後2分以内はアラート送信しない（再起動直後の誤送信防止）
-        if (now - boot_time).total_seconds() < 120:
-            await asyncio.sleep(60)
-            continue
 
         # アラート時刻をdataから取得（なければデフォルト）
         alert_times = {}
@@ -199,27 +217,30 @@ async def alert_loop():
             saved = data.get("alert_times", {}).get(action)
             alert_times[action] = tuple(saved) if saved else default
 
-        changed = False
         for uid, emp in data["employees"].items():
-            if uid not in data["alert_count"]:
-                data["alert_count"][uid] = {}
+            if uid not in sent_today:
+                sent_today[uid] = {}
 
             for action, (alert_h, alert_m) in alert_times.items():
-                count = data["alert_count"][uid].get(action, 0)
+                count = sent_today[uid].get(action, 0)
 
                 # 最大送信回数に達していたらスキップ
                 if count >= ALERT_MAX_COUNT:
                     continue
 
-                # アラート時刻を過ぎているか（JST）
+                # 1回目：アラート時刻を過ぎているか（JST）
+                # 2回目：1回目から15分後
                 alert_time = now.replace(hour=alert_h, minute=alert_m, second=0, microsecond=0)
-                if now < alert_time:
+                second_alert_time = alert_time + datetime.timedelta(minutes=15)
+
+                if count == 0 and now < alert_time:
+                    continue
+                if count == 1 and now < second_alert_time:
                     continue
 
                 # 今日すでに報告済みか
                 if has_reported(uid, action):
-                    data["alert_count"][uid][action] = ALERT_MAX_COUNT
-                    changed = True
+                    sent_today[uid][action] = ALERT_MAX_COUNT
                     continue
 
                 # アラート送信
@@ -239,11 +260,7 @@ async def alert_loop():
                     await channel.send(f"<@{uid}>", embed=embed)
                     print(f"[アラート送信] {emp['display_name']} / {action} ({count+1}回目)")
 
-                data["alert_count"][uid][action] = count + 1
-                changed = True
-
-        if changed:
-            save_data(data)
+                sent_today[uid][action] = count + 1
 
         await asyncio.sleep(60)  # 1分ごとにチェック
 
