@@ -52,15 +52,15 @@ import os
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 DATA_FILE = "data.json"
 
-# アラート時刻設定（時, 分）
-ALERT_TIMES = {
-    "起床": (6,  0),   # 6:00  までに起床報告がない場合
-    "出発": (7,  0),   # 7:00  までに出発報告がない場合
-    "到着": (9, 50),   # 9:50  までに到着報告がない場合
+# デフォルトのアラート時刻（コマンドで変更可能・日本時間）
+DEFAULT_ALERT_TIMES = {
+    "起床": (8, 0),
+    "出発": (8, 0),
+    "到着": (8, 0),
 }
 
-# 何件メッセージが溜まったらパネルを再送信するか
-PANEL_REFRESH_COUNT = 7
+JST = datetime.timezone(datetime.timedelta(hours=9))  # 日本時間
+ALERT_MAX_COUNT = 2  # アラートの最大送信回数
 
 # ==========================================
 # データ管理
@@ -75,7 +75,8 @@ def load_data() -> dict:
         "admins":        [],   # [uid, ...]
         "last_report":   {},   # admin_uid -> reporter_uid（返信転送用）
         "today_reports": {},   # uid -> {起床: bool, 出発: bool, 到着: bool, date: str}
-        "message_count": {}    # uid -> int（パネル再送信カウント用）
+        "message_count": {},   # uid -> int（パネル再送信カウント用）
+        "alert_times": {}      # action -> [h, m]
     }
 
 
@@ -85,7 +86,7 @@ def save_data(data: dict):
 
 
 def get_today_str() -> str:
-    return datetime.date.today().isoformat()
+    return datetime.datetime.now(JST).date().isoformat()
 
 
 def mark_reported(uid: str, action: str):
@@ -150,7 +151,7 @@ def build_report_embed(display_name: str, action: str, condition: str) -> discor
     time_str = now.strftime("%H:%M")
 
     embed = discord.Embed(
-        title=f"{action_emoji.get(action, '')} {display_name}さんから！{action}報告を送信しました！",
+        title=f"{action_emoji.get(action, '')} {display_name}さんが！{action}報告を送信しました！",
         color=(
             discord.Color.green()  if condition == "いい"    else
             discord.Color.orange() if condition == "まあまあ" else
@@ -172,36 +173,46 @@ async def alert_loop():
     """毎分チェックして未報告アラートを送信"""
     await bot.wait_until_ready()
 
-    # すでに送ったアラートを記録（同じ日に2回送らないため）
-    alerted_today: dict[str, set] = {}  # uid -> {action, ...}
+    # uid -> {action -> 送信回数}
+    alert_count: dict[str, dict[str, int]] = {}
+    last_reset_date = ""
 
     while not bot.is_closed():
-        now   = datetime.datetime.now()
-        today = get_today_str()
+        now   = datetime.datetime.now(JST)
+        today = now.date().isoformat()
 
         # 日付が変わったらリセット
-        for uid in list(alerted_today.keys()):
-            alerted_today[uid] = set()
+        if today != last_reset_date:
+            alert_count = {}
+            last_reset_date = today
 
         data = load_data()
 
-        for uid, emp in data["employees"].items():
-            if uid not in alerted_today:
-                alerted_today[uid] = set()
+        # アラート時刻をdataから取得（なければデフォルト）
+        alert_times = {}
+        for action, default in DEFAULT_ALERT_TIMES.items():
+            saved = data.get("alert_times", {}).get(action)
+            alert_times[action] = tuple(saved) if saved else default
 
-            for action, (alert_h, alert_m) in ALERT_TIMES.items():
-                # アラート時刻を過ぎているか
+        for uid, emp in data["employees"].items():
+            if uid not in alert_count:
+                alert_count[uid] = {}
+
+            for action, (alert_h, alert_m) in alert_times.items():
+                count = alert_count[uid].get(action, 0)
+
+                # 最大送信回数に達していたらスキップ
+                if count >= ALERT_MAX_COUNT:
+                    continue
+
+                # アラート時刻を過ぎているか（JST）
                 alert_time = now.replace(hour=alert_h, minute=alert_m, second=0, microsecond=0)
                 if now < alert_time:
-                    continue  # まだ時間前
-
-                # 今日すでにアラート送信済みか
-                if action in alerted_today[uid]:
                     continue
 
                 # 今日すでに報告済みか
                 if has_reported(uid, action):
-                    alerted_today[uid].add(action)
+                    alert_count[uid][action] = ALERT_MAX_COUNT  # スキップ
                     continue
 
                 # アラート送信
@@ -212,17 +223,16 @@ async def alert_loop():
                         break
 
                 if channel:
-                    action_emoji = {"起床": "🌅", "出発": "🚶", "到着": "🏢"}
                     embed = discord.Embed(
-                        title=f"⏰ {action}報告のお願い",
+                        title=f"⏰ {emp['display_name']}さん、{action}報告お願いします！",
                         description=f"{emp['display_name']}さん、{action}報告お願いします！",
                         color=discord.Color.yellow()
                     )
-                    embed.set_footer(text=f"アラート時刻: {now.strftime('%H:%M')}")
+                    embed.set_footer(text=f"アラート時刻: {now.strftime('%H:%M')} JST")
                     await channel.send(f"<@{uid}>", embed=embed)
-                    print(f"[アラート送信] {emp['display_name']} / {action}")
+                    print(f"[アラート送信] {emp['display_name']} / {action} ({count+1}回目)")
 
-                alerted_today[uid].add(action)
+                alert_count[uid][action] = count + 1
 
         await asyncio.sleep(60)  # 1分ごとにチェック
 
@@ -506,6 +516,35 @@ async def delete_public_channel(interaction: discord.Interaction, channel: disco
     name = channel.name
     await channel.delete(reason="管理者によるチャンネル削除")
     await interaction.response.send_message(f"🗑️ `#{name}` を削除しました", ephemeral=True)
+
+
+
+@tree.command(name="アラート設定", description="アラート時刻を設定します（日本時間）")
+@app_commands.describe(
+    action = "設定する報告種別（起床 / 出発 / 到着）",
+    hour   = "時（0〜23）",
+    minute = "分（0〜59）"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def set_alert(interaction: discord.Interaction, action: str, hour: int, minute: int):
+    if action not in ["起床", "出発", "到着"]:
+        await interaction.response.send_message("⚠️ 報告種別は「起床」「出発」「到着」のいずれかを入力してください", ephemeral=True)
+        return
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        await interaction.response.send_message("⚠️ 時刻が正しくありません（時: 0〜23、分: 0〜59）", ephemeral=True)
+        return
+
+    data = load_data()
+    if "alert_times" not in data:
+        data["alert_times"] = {}
+    data["alert_times"][action] = [hour, minute]
+    save_data(data)
+
+    await interaction.response.send_message(
+        f"✅ {action}のアラート時刻を **{hour:02d}:{minute:02d}** に設定しました（日本時間）
+アラートは最大{ALERT_MAX_COUNT}回送信されます",
+        ephemeral=True
+    )
 
 
 # ==========================================
