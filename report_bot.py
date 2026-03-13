@@ -363,34 +363,13 @@ class NippoButton(discord.ui.Button):
         if interaction.user.id != self.employee_uid:
             await interaction.response.send_message("❌ このボタンはあなた専用ではありません", ephemeral=True)
             return
-        await interaction.response.send_modal(FurikaeriModal(self.display_name, self.employee_uid))
+        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid))
 
 
 # ==========================================
 # 振り返りModal（1/2）
 # ==========================================
 
-class FurikaeriModal(discord.ui.Modal, title="📝 振り返り報告（1/2）"):
-    def __init__(self, display_name: str, employee_uid: int):
-        super().__init__()
-        self.display_name = display_name
-        self.employee_uid = employee_uid
-
-    ishiki    = discord.ui.TextInput(label="意識した点",           style=discord.TextStyle.paragraph, placeholder="例：声のトーンを意識した", required=True)
-    dekita    = discord.ui.TextInput(label="できてたと思う点",     style=discord.TextStyle.paragraph, placeholder="例：着座率が上がった", required=True)
-    dekinakatta = discord.ui.TextInput(label="できてなかった点",   style=discord.TextStyle.paragraph, placeholder="例：クロージングが弱かった", required=True)
-    kaizen    = discord.ui.TextInput(label="改善策",               style=discord.TextStyle.paragraph, placeholder="例：トークの流れを見直す", required=True)
-    jikai     = discord.ui.TextInput(label="次回稼働で意識する点", style=discord.TextStyle.paragraph, placeholder="例：最初の一声を大きく", required=True)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        furikaeri = {
-            "意識した点":           self.ishiki.value,
-            "できてたと思う点":     self.dekita.value,
-            "できてなかった点":     self.dekinakatta.value,
-            "改善策":               self.kaizen.value,
-            "次回稼働で意識する点": self.jikai.value,
-        }
-        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid, furikaeri))
 
 
 # ==========================================
