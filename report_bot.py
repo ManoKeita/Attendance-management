@@ -127,6 +127,8 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
 
+
+
 async def send_dm_to_admins(embed: discord.Embed, reporter_uid: str):
     """管理者全員にDM送信"""
     data = load_data()
@@ -329,6 +331,7 @@ class StatusView(discord.ui.View):
         self.add_item(ReportButton("🌅 起床", discord.ButtonStyle.primary,   f"wakeup_{employee_uid}", "起床", display_name, employee_uid))
         self.add_item(ReportButton("🚶 出発", discord.ButtonStyle.success,   f"depart_{employee_uid}", "出発", display_name, employee_uid))
         self.add_item(ReportButton("🏢 到着", discord.ButtonStyle.secondary, f"arrive_{employee_uid}", "到着", display_name, employee_uid))
+        self.add_item(NippoButton(f"nippo_{employee_uid}", display_name, employee_uid))
 
 
 class ReportButton(discord.ui.Button):
@@ -347,6 +350,103 @@ class ReportButton(discord.ui.Button):
             view=ConditionView(self.display_name, self.action, self.employee_uid),
             ephemeral=True
         )
+
+
+
+class NippoButton(discord.ui.Button):
+    def __init__(self, custom_id: str, display_name: str, employee_uid: int):
+        super().__init__(label="📝 報告", style=discord.ButtonStyle.danger, custom_id=custom_id)
+        self.display_name = display_name
+        self.employee_uid = employee_uid
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.employee_uid:
+            await interaction.response.send_message("❌ このボタンはあなた専用ではありません", ephemeral=True)
+            return
+        await interaction.response.send_modal(FurikaeriModal(self.display_name, self.employee_uid))
+
+
+# ==========================================
+# 振り返りModal（1/2）
+# ==========================================
+
+class FurikaeriModal(discord.ui.Modal, title="📝 振り返り報告（1/2）"):
+    def __init__(self, display_name: str, employee_uid: int):
+        super().__init__()
+        self.display_name = display_name
+        self.employee_uid = employee_uid
+
+    ishiki    = discord.ui.TextInput(label="意識した点",           style=discord.TextStyle.paragraph, placeholder="例：声のトーンを意識した", required=True)
+    dekita    = discord.ui.TextInput(label="できてたと思う点",     style=discord.TextStyle.paragraph, placeholder="例：着座率が上がった", required=True)
+    dekinakatta = discord.ui.TextInput(label="できてなかった点",   style=discord.TextStyle.paragraph, placeholder="例：クロージングが弱かった", required=True)
+    kaizen    = discord.ui.TextInput(label="改善策",               style=discord.TextStyle.paragraph, placeholder="例：トークの流れを見直す", required=True)
+    jikai     = discord.ui.TextInput(label="次回稼働で意識する点", style=discord.TextStyle.paragraph, placeholder="例：最初の一声を大きく", required=True)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        furikaeri = {
+            "意識した点":           self.ishiki.value,
+            "できてたと思う点":     self.dekita.value,
+            "できてなかった点":     self.dekinakatta.value,
+            "改善策":               self.kaizen.value,
+            "次回稼働で意識する点": self.jikai.value,
+        }
+        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid, furikaeri))
+
+
+# ==========================================
+# 日報Modal（2/2）
+# ==========================================
+
+class NippoModal(discord.ui.Modal, title="📊 日報入力（2/2）"):
+    def __init__(self, display_name: str, employee_uid: int, furikaeri: dict):
+        super().__init__()
+        self.display_name = display_name
+        self.employee_uid = employee_uid
+        self.furikaeri    = furikaeri
+
+    date_goals = discord.ui.TextInput(
+        label="日付 / 月間目標成約 / 月間目標スイング成約",
+        style=discord.TextStyle.short,
+        placeholder="例：3/13 / 10 / 5",
+        required=True
+    )
+    daily = discord.ui.TextInput(
+        label="当日着座数 / 当日成約 / 当日スイング成約",
+        style=discord.TextStyle.short,
+        placeholder="例：8 / 2 / 1",
+        required=True
+    )
+    monthly = discord.ui.TextInput(
+        label="月間累計成約 / 月間累計スイング / 残成約 / 残スイング",
+        style=discord.TextStyle.short,
+        placeholder="例：6 / 3 / 4 / 2",
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        now      = datetime.datetime.now(JST)
+        date_str = now.strftime("%Y/%m/%d")
+        time_str = now.strftime("%H:%M")
+
+        # チャンネルに投稿するembed
+        embed = discord.Embed(
+            title=f"📝 {self.display_name}さんの日報",
+            color=discord.Color.blurple()
+        )
+        embed.add_field(name="＝＝ 振り返り ＝＝", value="​", inline=False)
+        for k, v in self.furikaeri.items():
+            embed.add_field(name=k, value=v, inline=False)
+
+        embed.add_field(name="＝＝ 日報 ＝＝", value="​", inline=False)
+        embed.add_field(name="日付 / 月間目標成約 / 月間目標スイング",      value=self.date_goals.value, inline=False)
+        embed.add_field(name="当日着座数 / 当日成約 / 当日スイング",         value=self.daily.value,      inline=False)
+        embed.add_field(name="月間累計成約 / 累計スイング / 残成約 / 残スイング", value=self.monthly.value, inline=False)
+        embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
+
+        await interaction.response.send_message("✅ 日報を送信しました！", ephemeral=True)
+        await interaction.channel.send(embed=embed)
+        await send_dm_to_admins(embed, str(self.employee_uid))
+
 
 
 # ==========================================
