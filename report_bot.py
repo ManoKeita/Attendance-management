@@ -363,7 +363,7 @@ class NippoButton(discord.ui.Button):
         if interaction.user.id != self.employee_uid:
             await interaction.response.send_message("❌ このボタンはあなた専用ではありません", ephemeral=True)
             return
-        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid))
+        await interaction.response.send_modal(NippoModal(self.display_name, self.employee_uid, furikaeri=""))
 
 
 # ==========================================
