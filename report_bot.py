@@ -753,4 +753,21 @@ async def on_ready():
     print(f"登録済み従業員: {len(data['employees'])}名 / 管理者: {len(data['admins'])}名")
 
 
-bot.run(BOT_TOKEN)
+import asyncio, time
+
+async def main():
+    retry_delay = 30
+    while True:
+        try:
+            await bot.start(BOT_TOKEN)
+        except discord.errors.HTTPException as e:
+            if e.status == 429:
+                print(f"レート制限中。{retry_delay}秒後に再試行...")
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 300)
+            else:
+                raise
+        except Exception:
+            raise
+
+asyncio.run(main())
