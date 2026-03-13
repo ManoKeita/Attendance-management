@@ -299,7 +299,7 @@ class StatusView(discord.ui.View):
 # スラッシュコマンド
 # ==========================================
 
-@tree.command(name="add_employee", description="従業員を追加してプライベートチャンネルを自動作成します")
+@tree.command(name="従業員追加", description="従業員を追加してプライベートチャンネルを自動作成します")
 @app_commands.describe(
     member       = "追加する従業員（@メンション）",
     display_name = "報告に表示する名前（例: 田中）",
@@ -361,7 +361,7 @@ async def add_employee(
     )
 
 
-@tree.command(name="remove_employee", description="従業員を削除します（チャンネルは残ります）")
+@tree.command(name="従業員削除", description="従業員を削除します（チャンネルは残ります）")
 @app_commands.describe(member="削除する従業員（@メンション）")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_employee(interaction: discord.Interaction, member: discord.Member):
@@ -376,7 +376,7 @@ async def remove_employee(interaction: discord.Interaction, member: discord.Memb
     await interaction.response.send_message(f"🗑️ {name}さん（{member.mention}）を削除しました", ephemeral=True)
 
 
-@tree.command(name="add_admin", description="管理者（DM通知先）を追加します")
+@tree.command(name="管理者追加", description="管理者（DM通知先）を追加します")
 @app_commands.describe(member="管理者にするユーザー（@メンション）")
 @app_commands.checks.has_permissions(administrator=True)
 async def add_admin(interaction: discord.Interaction, member: discord.Member):
@@ -390,7 +390,7 @@ async def add_admin(interaction: discord.Interaction, member: discord.Member):
     await interaction.response.send_message(f"✅ {member.mention} を管理者（DM通知先）に追加しました", ephemeral=True)
 
 
-@tree.command(name="remove_admin", description="管理者を削除します")
+@tree.command(name="管理者削除", description="管理者を削除します")
 @app_commands.describe(member="削除する管理者（@メンション）")
 @app_commands.checks.has_permissions(administrator=True)
 async def remove_admin(interaction: discord.Interaction, member: discord.Member):
@@ -404,7 +404,7 @@ async def remove_admin(interaction: discord.Interaction, member: discord.Member)
     await interaction.response.send_message(f"🗑️ {member.mention} を管理者から削除しました", ephemeral=True)
 
 
-@tree.command(name="list", description="従業員・管理者の登録一覧を表示します")
+@tree.command(name="一覧", description="従業員・管理者の登録一覧を表示します")
 @app_commands.checks.has_permissions(administrator=True)
 async def show_list(interaction: discord.Interaction):
     data  = load_data()
@@ -428,7 +428,7 @@ async def show_list(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@tree.command(name="setup", description="全従業員の報告パネルを再設置します")
+@tree.command(name="パネル再設置", description="全従業員の報告パネルを再設置します")
 @app_commands.checks.has_permissions(administrator=True)
 async def setup_all(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
@@ -455,7 +455,7 @@ async def setup_all(interaction: discord.Interaction):
 # パブリックチャンネル作成
 # ==========================================
 
-@tree.command(name="create_public_channel", description="全員が見えるパブリックチャンネルを作成します")
+@tree.command(name="チャンネル作成", description="全員が見えるパブリックチャンネルを作成します")
 @app_commands.describe(
     channel_name = "作成するチャンネル名（例: soudan-madoguchi）",
     description  = "チャンネルの説明（任意）"
@@ -491,7 +491,7 @@ async def create_public_channel(
     await interaction.followup.send(f"✅ パブリックチャンネル {channel.mention} を作成しました！\nサーバーに参加した全員が即座に見えます。")
 
 
-@tree.command(name="delete_public_channel", description="パブリックチャンネルを削除します")
+@tree.command(name="チャンネル削除", description="パブリックチャンネルを削除します")
 @app_commands.describe(channel="削除するチャンネル")
 @app_commands.checks.has_permissions(administrator=True)
 async def delete_public_channel(interaction: discord.Interaction, channel: discord.TextChannel):
