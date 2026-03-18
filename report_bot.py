@@ -643,6 +643,27 @@ def _weekly_embed(display_name: str, icon: str, title: str, color: discord.Color
     return embed, date_str, time_str
 
 
+async def _resend_panel(channel: discord.TextChannel, member_id: int, display_name: str):
+    """送信後にパネルを最下部に再送信して埋もれを防ぐ"""
+    panel_embed = discord.Embed(
+        title=f"📋 {display_name}さんの週次チェックリスト",
+        description=(
+            "━━━━━━━━━━━━━━━━━━\n"
+            "🎯 **ナンパ実践** → 回数・会話・連絡先取得\n"
+            "🗣️ **接客トーク** → うまくいった点・改善策\n"
+            "🚀 **次週の目標** → ナンパ・成約・成約率\n"
+            "👀 **観察メモ** → ガルバ・キャバの気づき\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "送りたい項目だけ個別に送信できます\n"
+            "📩 送信内容は管理者にDMで届きます"
+        ),
+        color=discord.Color.blue()
+    )
+    view = WeeklyChecklistView(member_id=member_id, display_name=display_name)
+    await channel.send(content="# ⬇️ 送りたい項目をタップ ⬇️", embed=panel_embed, view=view)
+    bot.add_view(view)
+
+
 # ---- ナンパ実践 ----
 
 class NanpaModal(discord.ui.Modal, title="🎯 ナンパ実践"):
@@ -687,6 +708,7 @@ class NanpaModal(discord.ui.Modal, title="🎯 ナンパ実践"):
         await interaction.response.send_message("✅ ナンパ実践を送信しました！", ephemeral=True)
         await interaction.channel.send(embed=embed)
         await send_dm_to_admins(embed, str(self.member_id))
+        await _resend_panel(interaction.channel, self.member_id, self.display_name)
 
 
 class NanpaButton(discord.ui.Button):
@@ -741,6 +763,7 @@ class SalesModal(discord.ui.Modal, title="🗣️ 接客トーク"):
         await interaction.response.send_message("✅ 接客トークを送信しました！", ephemeral=True)
         await interaction.channel.send(embed=embed)
         await send_dm_to_admins(embed, str(self.member_id))
+        await _resend_panel(interaction.channel, self.member_id, self.display_name)
 
 
 class SalesButton(discord.ui.Button):
@@ -801,6 +824,7 @@ class NextGoalModal(discord.ui.Modal, title="🚀 次週の目標"):
         await interaction.response.send_message("✅ 次週の目標を送信しました！", ephemeral=True)
         await interaction.channel.send(embed=embed)
         await send_dm_to_admins(embed, str(self.member_id))
+        await _resend_panel(interaction.channel, self.member_id, self.display_name)
 
 
 class NextGoalButton(discord.ui.Button):
@@ -863,6 +887,7 @@ class ObservationModal(discord.ui.Modal, title="👀 観察メモ"):
         await interaction.response.send_message("✅ 観察メモを送信しました！", ephemeral=True)
         await interaction.channel.send(embed=embed)
         await send_dm_to_admins(embed, str(self.member_id))
+        await _resend_panel(interaction.channel, self.member_id, self.display_name)
 
 
 class ObservationButton(discord.ui.Button):
