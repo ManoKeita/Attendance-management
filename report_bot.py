@@ -28,6 +28,7 @@ Discord 従業員報告Bot
   /remove_admin @ユーザー     → 管理者を削除
   /list                       → 登録一覧を表示
   /setup                      → パネルを再設置
+  /週次グループ作成            → 自分専用の鍵付き週次チェックリストグループを作成
 
 ====================
 管理者からの返信方法
@@ -624,6 +625,341 @@ async def create_public_channel(
     await interaction.followup.send(f"✅ パブリックチャンネル {channel.mention} を作成しました！\nサーバーに参加した全員が即座に見えます。")
 
 
+# ==========================================
+# 週次グループ作成＋週次チェックリスト（項目独立）
+# ==========================================
+
+# ---- 共通ヘルパー ----
+
+def _weekly_embed(display_name: str, icon: str, title: str, color: discord.Color) -> tuple[discord.Embed, str, str]:
+    now      = datetime.datetime.now(JST)
+    week_num = now.isocalendar()[1]
+    date_str = now.strftime("%Y/%m/%d")
+    time_str = now.strftime("%H:%M")
+    embed = discord.Embed(
+        title=f"{icon} {display_name}さん｜{title}（第{week_num}週）",
+        color=color
+    )
+    return embed, date_str, time_str
+
+
+# ---- ナンパ実践 ----
+
+class NanpaModal(discord.ui.Modal, title="🎯 ナンパ実践"):
+    def __init__(self, display_name: str, member_id: int):
+        super().__init__()
+        self.display_name = display_name
+        self.member_id    = member_id
+
+    count = discord.ui.TextInput(
+        label="今週ナンパした回数",
+        style=discord.TextStyle.short,
+        placeholder="例：8回",
+        required=True
+    )
+    conv = discord.ui.TextInput(
+        label="会話5分以上",
+        style=discord.TextStyle.short,
+        placeholder="例：3回",
+        required=True
+    )
+    contact = discord.ui.TextInput(
+        label="連絡先取得",
+        style=discord.TextStyle.short,
+        placeholder="例：1件",
+        required=True
+    )
+    memo = discord.ui.TextInput(
+        label="気づき・メモ（任意）",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：最初の一言で相手の反応が全然違った",
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed, date_str, time_str = _weekly_embed(self.display_name, "🎯", "ナンパ実践", discord.Color.red())
+        embed.add_field(name="ナンパ回数",   value=self.count.value,   inline=True)
+        embed.add_field(name="会話5分以上",  value=self.conv.value,    inline=True)
+        embed.add_field(name="連絡先取得",   value=self.contact.value, inline=True)
+        if self.memo.value:
+            embed.add_field(name="気づき・メモ", value=self.memo.value, inline=False)
+        embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
+        await interaction.response.send_message("✅ ナンパ実践を送信しました！", ephemeral=True)
+        await interaction.channel.send(embed=embed)
+        await send_dm_to_admins(embed, str(self.member_id))
+
+
+class NanpaButton(discord.ui.Button):
+    def __init__(self, member_id: int, display_name: str):
+        super().__init__(label="🎯 ナンパ実践", style=discord.ButtonStyle.danger,
+                         custom_id=f"w_nanpa_{member_id}")
+        self.member_id    = member_id
+        self.display_name = display_name
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ このボタンはあなた専用です", ephemeral=True)
+            return
+        await interaction.response.send_modal(NanpaModal(self.display_name, self.member_id))
+
+
+# ---- 接客トーク ----
+
+class SalesModal(discord.ui.Modal, title="🗣️ 接客トーク"):
+    def __init__(self, display_name: str, member_id: int):
+        super().__init__()
+        self.display_name = display_name
+        self.member_id    = member_id
+
+    good = discord.ui.TextInput(
+        label="うまくいった接客トーク",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：ヒアリングで本音を引き出せた、クロージングの切り返しがうまくいった",
+        required=True
+    )
+    bad = discord.ui.TextInput(
+        label="うまくいかなかった点",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：断られた後に引いてしまった",
+        required=False
+    )
+    improve = discord.ui.TextInput(
+        label="改善策",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：断られた後の切り返しフレーズを3つ用意する",
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed, date_str, time_str = _weekly_embed(self.display_name, "🗣️", "接客トーク", discord.Color.green())
+        embed.add_field(name="✅ うまくいったこと",    value=self.good.value,    inline=False)
+        if self.bad.value:
+            embed.add_field(name="❌ うまくいかなかった点", value=self.bad.value, inline=False)
+        if self.improve.value:
+            embed.add_field(name="🔧 改善策",            value=self.improve.value, inline=False)
+        embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
+        await interaction.response.send_message("✅ 接客トークを送信しました！", ephemeral=True)
+        await interaction.channel.send(embed=embed)
+        await send_dm_to_admins(embed, str(self.member_id))
+
+
+class SalesButton(discord.ui.Button):
+    def __init__(self, member_id: int, display_name: str):
+        super().__init__(label="🗣️ 接客トーク", style=discord.ButtonStyle.success,
+                         custom_id=f"w_sales_{member_id}")
+        self.member_id    = member_id
+        self.display_name = display_name
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ このボタンはあなた専用です", ephemeral=True)
+            return
+        await interaction.response.send_modal(SalesModal(self.display_name, self.member_id))
+
+
+# ---- 次週の目標 ----
+
+class NextGoalModal(discord.ui.Modal, title="🚀 次週の目標"):
+    def __init__(self, display_name: str, member_id: int):
+        super().__init__()
+        self.display_name = display_name
+        self.member_id    = member_id
+
+    nanpa_goal = discord.ui.TextInput(
+        label="ナンパ目標",
+        style=discord.TextStyle.short,
+        placeholder="例：10回",
+        required=True
+    )
+    sales_goal = discord.ui.TextInput(
+        label="成約目標",
+        style=discord.TextStyle.short,
+        placeholder="例：3件",
+        required=True
+    )
+    rate_goal = discord.ui.TextInput(
+        label="成約率目標",
+        style=discord.TextStyle.short,
+        placeholder="例：30%",
+        required=True
+    )
+    action = discord.ui.TextInput(
+        label="特に意識すること",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：最初の10秒の掴みを変える",
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed, date_str, time_str = _weekly_embed(self.display_name, "🚀", "次週の目標", discord.Color.orange())
+        embed.add_field(name="ナンパ目標", value=self.nanpa_goal.value, inline=True)
+        embed.add_field(name="成約目標",   value=self.sales_goal.value, inline=True)
+        embed.add_field(name="成約率目標", value=self.rate_goal.value,  inline=True)
+        if self.action.value:
+            embed.add_field(name="特に意識すること", value=self.action.value, inline=False)
+        embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
+        await interaction.response.send_message("✅ 次週の目標を送信しました！", ephemeral=True)
+        await interaction.channel.send(embed=embed)
+        await send_dm_to_admins(embed, str(self.member_id))
+
+
+class NextGoalButton(discord.ui.Button):
+    def __init__(self, member_id: int, display_name: str):
+        super().__init__(label="🚀 次週の目標", style=discord.ButtonStyle.primary,
+                         custom_id=f"w_goal_{member_id}")
+        self.member_id    = member_id
+        self.display_name = display_name
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ このボタンはあなた専用です", ephemeral=True)
+            return
+        await interaction.response.send_modal(NextGoalModal(self.display_name, self.member_id))
+
+
+# ---- 観察メモ ----
+
+class ObservationModal(discord.ui.Modal, title="👀 観察メモ"):
+    def __init__(self, display_name: str, member_id: int):
+        super().__init__()
+        self.display_name = display_name
+        self.member_id    = member_id
+
+    place = discord.ui.TextInput(
+        label="観察した場所",
+        style=discord.TextStyle.short,
+        placeholder="例：ガールズバー〇〇、キャバクラ〇〇",
+        required=True
+    )
+    first_word = discord.ui.TextInput(
+        label="最初の一言・場の作り方",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：「最近どこ行ったの？」から自然に距離を縮めていた",
+        required=False
+    )
+    recovery = discord.ui.TextInput(
+        label="断られた後のリカバリー",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：引かずに「それってどういう意味？」と聞き返していた",
+        required=False
+    )
+    steal = discord.ui.TextInput(
+        label="真似したいこと・学んだこと",
+        style=discord.TextStyle.paragraph,
+        placeholder="例：相手の名前を連呼して親近感を出すテクニック",
+        required=False
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        embed, date_str, time_str = _weekly_embed(self.display_name, "👀", "観察メモ", discord.Color.purple())
+        embed.add_field(name="📍 観察場所",           value=self.place.value,      inline=False)
+        if self.first_word.value:
+            embed.add_field(name="💬 最初の一言・場の作り方",  value=self.first_word.value, inline=False)
+        if self.recovery.value:
+            embed.add_field(name="🔄 断られた後のリカバリー", value=self.recovery.value,   inline=False)
+        if self.steal.value:
+            embed.add_field(name="💡 真似したいこと",         value=self.steal.value,      inline=False)
+        embed.set_footer(text=f"📅 {date_str}　⏰ {time_str}")
+        await interaction.response.send_message("✅ 観察メモを送信しました！", ephemeral=True)
+        await interaction.channel.send(embed=embed)
+        await send_dm_to_admins(embed, str(self.member_id))
+
+
+class ObservationButton(discord.ui.Button):
+    def __init__(self, member_id: int, display_name: str):
+        super().__init__(label="👀 観察メモ", style=discord.ButtonStyle.secondary,
+                         custom_id=f"w_obs_{member_id}")
+        self.member_id    = member_id
+        self.display_name = display_name
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.member_id:
+            await interaction.response.send_message("❌ このボタンはあなた専用です", ephemeral=True)
+            return
+        await interaction.response.send_modal(ObservationModal(self.display_name, self.member_id))
+
+
+# ---- パネルView（4ボタン独立） ----
+
+class WeeklyChecklistView(discord.ui.View):
+    """週次チェックリストパネル（常時表示・4項目独立）"""
+    def __init__(self, member_id: int, display_name: str):
+        super().__init__(timeout=None)
+        self.add_item(NanpaButton(member_id, display_name))
+        self.add_item(SalesButton(member_id, display_name))
+        self.add_item(NextGoalButton(member_id, display_name))
+        self.add_item(ObservationButton(member_id, display_name))
+
+
+# ---- /週次グループ作成 コマンド ----
+
+@tree.command(name="週次グループ作成", description="自分専用の週次チェックリストグループを作成します")
+async def create_weekly_group(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    guild  = interaction.guild
+    member = interaction.user
+
+    # 既存チャンネルチェック（重複防止）
+    channel_name = f"週次-{member.display_name}".lower().replace(" ", "-")
+    existing = discord.utils.get(guild.text_channels, name=channel_name)
+    if existing:
+        await interaction.followup.send(
+            f"⚠️ すでにグループが存在します：{existing.mention}", ephemeral=True
+        )
+        return
+
+    # 鍵付き：送信者＋Botのみ閲覧可
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me:           discord.PermissionOverwrite(view_channel=True, send_messages=True),
+        member:             discord.PermissionOverwrite(view_channel=True, send_messages=True),
+    }
+
+    # 管理者も閲覧可（書き込みなし）
+    data = load_data()
+    for admin_id in data["admins"]:
+        try:
+            admin_member = guild.get_member(int(admin_id))
+            if admin_member:
+                overwrites[admin_member] = discord.PermissionOverwrite(
+                    view_channel=True, send_messages=False
+                )
+        except Exception:
+            pass
+
+    channel = await guild.create_text_channel(
+        name=channel_name,
+        overwrites=overwrites,
+        reason=f"{member.display_name}さんの週次チェックリストグループ（自動作成）"
+    )
+
+    # パネル設置
+    panel_embed = discord.Embed(
+        title=f"📋 {member.display_name}さんの週次チェックリスト",
+        description=(
+            "━━━━━━━━━━━━━━━━━━\n"
+            "🎯 **ナンパ実践** → 回数・会話・連絡先取得\n"
+            "🗣️ **接客トーク** → うまくいった点・改善策\n"
+            "🚀 **次週の目標** → ナンパ・成約・成約率\n"
+            "👀 **観察メモ** → ガルバ・キャバの気づき\n"
+            "━━━━━━━━━━━━━━━━━━\n"
+            "送りたい項目だけ個別に送信できます\n"
+            "📩 送信内容は管理者にDMで届きます"
+        ),
+        color=discord.Color.blue()
+    )
+
+    view = WeeklyChecklistView(member_id=member.id, display_name=member.display_name)
+    await channel.send(content="# ⬇️ 送りたい項目をタップ ⬇️", embed=panel_embed, view=view)
+    bot.add_view(view)
+
+    await interaction.followup.send(
+        f"✅ 週次チェックリストグループ {channel.mention} を作成しました！\n"
+        f"🔒 このグループはあなたとBotのみ参加しています",
+        ephemeral=True
+    )
+
+
 @tree.command(name="チャンネル削除", description="パブリックチャンネルを削除します")
 @app_commands.describe(channel="削除するチャンネル")
 @app_commands.checks.has_permissions(administrator=True)
@@ -741,6 +1077,12 @@ async def on_ready():
 
     for uid, v in data["employees"].items():
         bot.add_view(StatusView(display_name=v["display_name"], employee_uid=int(uid)))
+
+    # 週次チェックリストViewを全メンバー分永続化
+    for guild in bot.guilds:
+        for member in guild.members:
+            if not member.bot:
+                bot.add_view(WeeklyChecklistView(member_id=member.id, display_name=member.display_name))
 
     # アラートループ開始
     bot.loop.create_task(alert_loop())
